@@ -15,17 +15,15 @@ async function getGeminiResponse(message) {
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const prompt = `
-Categorize the following provider message into one of these categories:
-- Support Request
-- Product Feedback
-- Account Issue
-- Other
+Only respond with a single JSON object. Do not include any extra explanation.
 
-Respond ONLY with a JSON object like this:
-{ "category": "Support Request", "reply": "Thanks for reaching out! We'll get back to you soon." }
+Here is a provider message: "${message}"
 
-Here is the message:
-"${message}"
+Respond in this format:
+{
+  "category": "Support Request",
+  "reply": "Thanks for reaching out! We'll get back to you soon."
+}
 `;
 
     const response = await fetch(API_URL, {
@@ -37,20 +35,36 @@ Here is the message:
     });
 
     const result = await response.json();
-
-    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
     console.log('Raw Gemini response:', rawText);
 
     let parsed = {};
+
     try {
         parsed = JSON.parse(rawText);
-    } catch (error) {
-        console.error('Failed to parse Gemini response as JSON:', error);
-        parsed = { category: "Other", reply: "Sorry, we couldn't process your request. A team member will follow up soon." };
+    } catch (err) {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            try {
+                parsed = JSON.parse(jsonMatch[0]);
+            } catch (innerErr) {
+                console.error('Failed to parse Gemini extracted JSON:', innerErr);
+            }
+        } else {
+            console.error('No valid JSON object found in Gemini response.');
+        }
+    }
+
+    if (!parsed.category || !parsed.reply) {
+        parsed = {
+            category: 'Other',
+            reply: "Sorry, we couldn't process your request. A team member will follow up soon."
+        };
     }
 
     return parsed;
 }
+
 
 app.post('/api/message', async (req, res) => {
     const { message } = req.body;
