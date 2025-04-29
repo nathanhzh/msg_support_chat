@@ -7,6 +7,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const { content } = result.candidates[0];
+console.log('Gemini categorized:', content);
 
 app.use(express.static('public'));
 app.use(bodyParser.json());
@@ -14,39 +16,34 @@ app.use(bodyParser.json());
 async function getGeminiResponse(userMessage) {
     const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + process.env.GEMINI_API_KEY;
 
-    const systemPrompt = `Categorize the user's message into one of these categories: 
-- Support Request
-- Product Feedback
-- Account Issue
-- General Question
+    const prompt = `
+    Categorize the following provider message into one of these categories:
+    - Support Request
+    - Product Feedback
+    - Account Issue
+    - Other
+    
+    Respond ONLY with a JSON object like this:
+    { "category": "Support Request", "reply": "Thanks for reaching out! We'll get back to you soon." }
+    
+    Here is the message:
+    "${message}"
+    `;
+    
 
-Respond in this format (JSON):
-{
-  "category": "chosen category",
-  "reply": "short helpful response to user"
-}`;
+    const result = await model.generateContent(prompt);
+    const rawResponse = result.response.text();
+    console.log('Raw Gemini response:', rawResponse);
 
-    const payload = {
-        contents: [
-            { role: "user", parts: [{ text: systemPrompt + "\n\n" + userMessage }] }
-        ]
-    };
-
-    const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-
+    let categoryAndReply = {};
     try {
-        return JSON.parse(text);
+        categoryAndReply = JSON.parse(rawResponse);
     } catch (error) {
-        console.error('Failed to parse Gemini response', error);
-        return { category: 'Unknown', reply: "Thanks for your message! We'll get back to you soon." };
+        console.error('Failed to parse Gemini JSON:', error);
     }
+
+    const { category, reply } = categoryAndReply;
+    console.log('Gemini categorized:', category);
 }
 
 app.post('/api/message', async (req, res) => {

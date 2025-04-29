@@ -10,6 +10,8 @@ messageForm.addEventListener('submit', async (e) => {
     addMessage(message, 'user-message');
     messageInput.value = '';
 
+    const loadingBubble = addMessage('...', 'bot-message');
+
     const response = await fetch('/api/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -17,7 +19,8 @@ messageForm.addEventListener('submit', async (e) => {
     });
 
     const data = await response.json();
-    addMessage(data.reply, 'bot-message');
+
+    loadingBubble.innerText = data.reply;
 });
 
 function addMessage(text, className) {
@@ -26,4 +29,5 @@ function addMessage(text, className) {
     messageDiv.innerText = text;
     chatBox.appendChild(messageDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
+    return messageDiv;
 }
