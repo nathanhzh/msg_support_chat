@@ -1,49 +1,48 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import bodyParser from 'body-parser';
-import fetch from 'node-fetch';
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ai = new GoogleGenAI({ apiKey: `${process.env.GEMINI_API_KEY}`});
 
 app.use(express.static('public'));
 app.use(bodyParser.json());
 
 async function getGeminiResponse(message) {
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`;
-
     const prompt = `
-Only respond with a single JSON object. Do not include any extra explanation.
+    Only respond with a single JSON object. Do not include any extra explanation.
+    Only redirect them to other links, or say you will submit a request. Do not offer to do stuff for them.
+    Respond in a polite manner, such as "Thank you for your request! We have submitted your request and will get back to you."
 
-Here is a provider message: "${message}"
+    Here is a provider message: "${message}"
+    Categorize the message into the following categories: "Support Request", "Product Feature", "Account Issue".
+    If it doesn't fit into any of these categories, specify "Other".
 
-Respond in this format:
-{
-  "category": "Support Request",
-  "reply": "Thanks for reaching out! We'll get back to you soon."
-}
-`;
+    Respond in this format:
+    {
+    "category": "",
+    "reply": ""
+    }
+    `;
 
-    const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
-        })
+    const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt
     });
 
-    const result = await response.json();
-    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-    console.log('Raw Gemini response:', rawText);
+    const result = response.text;
+    console.log('Raw Gemini response:', result);
 
     let parsed = {};
 
     try {
-        parsed = JSON.parse(rawText);
+        parsed = JSON.parse(result);
     } catch (err) {
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        const jsonMatch = result.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             try {
                 parsed = JSON.parse(jsonMatch[0]);
@@ -65,18 +64,15 @@ Respond in this format:
     return parsed;
 }
 
-
 app.post('/api/message', async (req, res) => {
     const { message } = req.body;
-
+    
+    console.log(message);
     const geminiData = await getGeminiResponse(message);
-    console.log('Gemini categorized:', geminiData);
 
-    // Google Sheets saving is commented out for now
-    // await saveToGoogleSheet({ message, category: geminiData.category });
-
-    res.json({ reply: geminiData.reply });
+    res.json({ reply: geminiData.reply, feedback: { category: geminiData.category, info: geminiData.info }, needsMoreInfo: geminiData.needs_more_info });
 });
+
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
